@@ -1,0 +1,5 @@
+Apache Arrow v15.0.2 NOTICE.txt is retained verbatim from the source commit
+corresponding to github.com/apache/arrow/go/v15 v15.0.2:
+https://github.com/apache/arrow/blob/e03105efc38edca4ca429bf967a17b4d0fbebe40/NOTICE.txt
+The Go module archive includes its composite LICENSE.txt but omits the
+repository-root NOTICE.txt, so this notice is supplied separately.

@@ -26,9 +26,21 @@ RUN go version && CGO_ENABLED=0 GOMAXPROCS=2 GOOS=${TARGETOS} GOARCH=${TARGETARC
     -ldflags "-s -w -X main.version=${VERSION} -X main.revision=${REVISION}" \
     ./cmd/bigquery-emulator
 
+# The license helper is pinned, built for the native build platform, and scans
+# the same target package/platform as the binary above.
+RUN GOMAXPROCS=2 go install github.com/google/go-licenses/v2@v2.0.1
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} ./scripts/container-licenses.sh /go/licenses
+
 FROM debian:${DEBIAN_VERSION}
 
 COPY --from=builder /go/bin/bigquery-emulator /bin/bigquery-emulator
+COPY --from=builder /go/licenses/ /usr/share/licenses/bigquery-emulator/
+LABEL org.opencontainers.image.licenses="MIT"
+RUN test -s /usr/share/licenses/bigquery-emulator/LICENSE \
+ && test -s /usr/share/licenses/bigquery-emulator/go/LICENSE \
+ && test -s /usr/share/licenses/bigquery-emulator/dependency-versions.txt \
+ && test -s /usr/share/licenses/bigquery-emulator/third-party/github.com/goccy/googlesqlite/NOTICE \
+ && test -s /usr/share/licenses/bigquery-emulator/third-party/github.com/apache/arrow/go/v15/NOTICE.txt
 
 WORKDIR /work
 
