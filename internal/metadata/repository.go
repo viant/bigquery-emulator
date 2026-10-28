@@ -150,7 +150,7 @@ func (r *Repository) RoutineFromData(projectID, datasetID string, data *types.Ro
 }
 
 func (r *Repository) FindProjectWithConn(ctx context.Context, tx *sql.Tx, id string) (*Project, error) {
-	projects, err := r.findProjects(ctx, tx, []string{id})
+	projects, err := r.findProjects(ctx, tx, []string{id}, true)
 	if err != nil {
 		return nil, err
 	}
@@ -164,6 +164,17 @@ func (r *Repository) FindProjectWithConn(ctx context.Context, tx *sql.Tx, id str
 }
 
 func (r *Repository) FindProject(ctx context.Context, id string) (*Project, error) {
+	return r.findProject(ctx, id, true)
+}
+
+// FindProjectForRequest loads the namespace and job references without decoding
+// every historic query result before the HTTP handler can read its request body.
+// Job-specific handlers must resolve the referenced job explicitly.
+func (r *Repository) FindProjectForRequest(ctx context.Context, id string) (*Project, error) {
+	return r.findProject(ctx, id, false)
+}
+
+func (r *Repository) findProject(ctx context.Context, id string, jobDetails bool) (*Project, error) {
 	conn, err := r.getConnection(ctx)
 	if err != nil {
 		return nil, err
@@ -174,7 +185,7 @@ func (r *Repository) FindProject(ctx context.Context, id string) (*Project, erro
 		return nil, err
 	}
 	defer tx.Commit()
-	projects, err := r.findProjects(ctx, tx, []string{id})
+	projects, err := r.findProjects(ctx, tx, []string{id}, jobDetails)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +198,7 @@ func (r *Repository) FindProject(ctx context.Context, id string) (*Project, erro
 	return projects[0], nil
 }
 
-func (r *Repository) findProjects(ctx context.Context, tx *sql.Tx, ids []string) ([]*Project, error) {
+func (r *Repository) findProjects(ctx context.Context, tx *sql.Tx, ids []string, jobDetails bool) ([]*Project, error) {
 	rows, err := tx.QueryContext(ctx, "SELECT id, datasetIDs, jobIDs FROM projects WHERE id IN UNNEST(@ids)", ids)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get projects: %w", err)
@@ -207,9 +218,16 @@ func (r *Repository) findProjects(ctx context.Context, tx *sql.Tx, ids []string)
 		if err != nil {
 			return nil, err
 		}
-		jobs, err := r.findJobs(ctx, tx, projectID, r.convertToStrings(jobIDs))
-		if err != nil {
-			return nil, err
+		jobs := make([]*Job, 0, len(jobIDs))
+		if jobDetails {
+			jobs, err = r.findJobs(ctx, tx, projectID, r.convertToStrings(jobIDs))
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			for _, jobID := range r.convertToStrings(jobIDs) {
+				jobs = append(jobs, NewJob(r, projectID, jobID, nil, nil, nil))
+			}
 		}
 		projects = append(projects, NewProject(r, projectID, datasets, jobs))
 	}

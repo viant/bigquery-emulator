@@ -183,7 +183,7 @@ func withProjectMiddleware() func(http.Handler) http.Handler {
 			projectID, exists := projectIDFromParams(params)
 			if exists {
 				server := serverFromContext(ctx)
-				project, err := server.metaRepo.FindProject(ctx, projectID)
+				project, err := server.metaRepo.FindProjectForRequest(ctx, projectID)
 				if err != nil {
 					w.WriteHeader(http.StatusInternalServerError)
 					fmt.Fprintln(w, err)
@@ -235,6 +235,15 @@ func withJobMiddleware() func(http.Handler) http.Handler {
 			if exists {
 				project := projectFromContext(ctx)
 				job := project.Job(jobID)
+				if job == nil {
+					errorResponse(ctx, w, errNotFound(fmt.Sprintf("job %s is not found", jobID)))
+					return
+				}
+				job, err := serverFromContext(ctx).metaRepo.FindJob(ctx, project.ID, jobID)
+				if err != nil {
+					errorResponse(ctx, w, errInternalError(err.Error()))
+					return
+				}
 				if job == nil {
 					errorResponse(ctx, w, errNotFound(fmt.Sprintf("job %s is not found", jobID)))
 					return
