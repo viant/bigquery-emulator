@@ -8,6 +8,7 @@ on:
       - v*
 env:
   REGISTRY: ghcr.io
+  GO_VERSION: 1.26.1
 
 jobs:
   build-image:
@@ -22,7 +23,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
           cache: true
 
       - name: Verify request and job API regressions
