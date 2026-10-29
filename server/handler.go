@@ -1978,6 +1978,11 @@ func deleteTableMetadata(ctx context.Context, server *Server, spec *googlesqlite
 		return fmt.Errorf("dataset %s is not found", datasetID)
 	}
 	table := dataset.Table(tableID)
+	// SQL has already completed before catalog synchronization. An IF EXISTS
+	// no-op or an already-synchronized drop has no metadata left to remove.
+	if table == nil {
+		return nil
+	}
 	conn, err := server.connMgr.Connection(ctx, projectID, datasetID)
 	if err != nil {
 		return err

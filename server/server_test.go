@@ -4797,3 +4797,36 @@ func TestExportDataStatement(t *testing.T) {
 		}
 	})
 }
+
+func TestDropTableIfExistsWithAbsentMetadata(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	emulator, err := server.New(server.TempStorage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = emulator.Load(server.StructSource(types.NewProject("test", types.NewDataset("dataset1")))); err != nil {
+		t.Fatal(err)
+	}
+	endpoint := emulator.TestServer()
+	defer endpoint.Close()
+	defer emulator.Stop(ctx)
+	client, err := bigquery.NewClient(ctx, "test", option.WithEndpoint(endpoint.URL), option.WithoutAuthentication())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	for _, query := range []string{"DROP TABLE IF EXISTS test.dataset1.missing", "CREATE TABLE test.dataset1.missing (ID INT64)", "DROP TABLE IF EXISTS test.dataset1.missing", "DROP TABLE IF EXISTS test.dataset1.missing"} {
+		job, err := client.Query(query).Run(ctx)
+		if err != nil {
+			t.Fatalf("%s: %v", query, err)
+		}
+		status, err := job.Wait(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = status.Err(); err != nil {
+			t.Fatalf("%s: %v", query, err)
+		}
+	}
+}
