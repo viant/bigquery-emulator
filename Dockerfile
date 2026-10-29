@@ -31,7 +31,12 @@ RUN go version && CGO_ENABLED=0 GOMAXPROCS=2 GOOS=${TARGETOS} GOARCH=${TARGETARC
 # The license helper is pinned, built for the native build platform, and scans
 # the same target package/platform as the binary above.
 RUN GOFLAGS= GOMAXPROCS=2 go install github.com/google/go-licenses/v2@v2.0.1
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} ./scripts/container-licenses.sh /go/licenses
+# go-licenses also probes GOPATH mode, where -modfile is invalid. Materialize
+# the exact alternate manifests inside this disposable build stage and clear
+# GOFLAGS for the scanner; the checkout and shared module cache stay untouched.
+RUN cp .patched-googlesql/emulator.mod go.mod \
+ && cp .patched-googlesql/emulator.sum go.sum \
+ && GOFLAGS= CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} ./scripts/container-licenses.sh /go/licenses
 
 FROM debian:${DEBIAN_VERSION}
 
