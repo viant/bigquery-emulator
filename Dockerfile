@@ -15,6 +15,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . ./
+RUN sh scripts/prepare-googlesql.sh
+ENV GOFLAGS=-modfile=/build/.patched-googlesql/emulator.mod
 
 ARG VERSION
 ARG REVISION
@@ -28,7 +30,7 @@ RUN go version && CGO_ENABLED=0 GOMAXPROCS=2 GOOS=${TARGETOS} GOARCH=${TARGETARC
 
 # The license helper is pinned, built for the native build platform, and scans
 # the same target package/platform as the binary above.
-RUN GOMAXPROCS=2 go install github.com/google/go-licenses/v2@v2.0.1
+RUN GOFLAGS= GOMAXPROCS=2 go install github.com/google/go-licenses/v2@v2.0.1
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} ./scripts/container-licenses.sh /go/licenses
 
 FROM debian:${DEBIAN_VERSION}

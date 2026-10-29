@@ -1,0 +1,280 @@
+diff --git a/googlesql.go b/googlesql.go
+index 1371c0d..135268a 100644
+--- a/googlesql.go
++++ b/googlesql.go
+@@ -591,7 +591,14 @@ func (m *Module) invoke(serviceID, methodID int32, req []byte, call func(*base.M
+ 		if reqPtr != 0 {
+ 			defer wasm2go.WasmFree(m.g, reqPtr)
+ 		}
+-		copy(wasm2go.Memory(m.g)[reqPtr:], req)
++		if reqPtr == 0 {
++			return nil, fmt.Errorf("WASM request allocation failed: %d bytes", len(req))
++		}
++		requestMemory, rangeErr := wasmMemorySlice(wasm2go.Memory(m.g), reqPtr, uint64(len(req)))
++		if rangeErr != nil {
++			return nil, rangeErr
++		}
++		copy(requestMemory, req)
+ 	}
+ 	packed, err := call(m.g, reqPtr, reqLen)
+ 	if err != nil {
+@@ -603,9 +610,13 @@ func (m *Module) invoke(serviceID, methodID int32, req []byte, call func(*base.M
+ 		return nil, nil
+ 	}
+ 	mem := wasm2go.Memory(m.g)
++	defer wasm2go.WasmFree(m.g, int32(respPtr))
++	responseMemory, rangeErr := wasmMemorySlice(mem, int32(respPtr), uint64(respLen))
++	if rangeErr != nil {
++		return nil, rangeErr
++	}
+ 	out := make([]byte, respLen)
+-	copy(out, mem[respPtr:respPtr+respLen])
+-	wasm2go.WasmFree(m.g, int32(respPtr))
++	copy(out, responseMemory)
+ 	return out, nil
+ }
+ 
+@@ -616,17 +627,28 @@ func (m *Module) resolveTypeName(ptr uint64) (string, error) {
+ 	m.mu.Lock()
+ 	defer m.mu.Unlock()
+ 	reqPtr := wasm2go.WasmAlloc(m.g, int32(len(buf)))
+-	copy(wasm2go.Memory(m.g)[reqPtr:], buf)
++	if reqPtr == 0 {
++		return "", fmt.Errorf("WASM type-name allocation failed")
++	}
++	defer wasm2go.WasmFree(m.g, reqPtr)
++	requestMemory, rangeErr := wasmMemorySlice(wasm2go.Memory(m.g), reqPtr, uint64(len(buf)))
++	if rangeErr != nil {
++		return "", rangeErr
++	}
++	copy(requestMemory, buf)
+ 	packed := wasm2go.WasmifyGetTypeName(m.g, reqPtr, int32(len(buf)))
+ 	respPtr := uint32(packed >> 32)
+ 	respLen := uint32(packed & 0xFFFFFFFF)
+-	defer wasm2go.WasmFree(m.g, reqPtr)
+ 	if respLen == 0 {
+ 		return "", nil
+ 	}
+-	resp := make([]byte, respLen)
+-	copy(resp, wasm2go.Memory(m.g)[respPtr:respPtr+respLen])
+ 	defer wasm2go.WasmFree(m.g, int32(respPtr))
++	responseMemory, rangeErr := wasmMemorySlice(wasm2go.Memory(m.g), int32(respPtr), uint64(respLen))
++	if rangeErr != nil {
++		return "", rangeErr
++	}
++	resp := make([]byte, respLen)
++	copy(resp, responseMemory)
+ 	if e := pbExtractError(resp); e != nil {
+ 		return "", e
+ 	}
+@@ -694,10 +716,12 @@ func (m *Module) handleCallback(callbackID, methodID, reqPtr, reqLen int32) int6
+ 	}
+ 	mem := wasm2go.Memory(m.g)
+ 	var req []byte
+-	if reqLen > 0 {
+-		buf := make([]byte, reqLen)
+-		copy(buf, mem[reqPtr:reqPtr+reqLen])
+-		req = buf
++	if uint32(reqLen) > 0 {
++		requestMemory, rangeErr := wasmMemorySlice(mem, reqPtr, uint64(uint32(reqLen)))
++		if rangeErr != nil {
++			panic(rangeErr)
++		}
++		req = append([]byte(nil), requestMemory...)
+ 	}
+ 	// Release m.mu around the user handler so that nested calls
+ 	// back into the transpiled module can re-acquire it without
+@@ -718,7 +742,14 @@ func (m *Module) handleCallback(callbackID, methodID, reqPtr, reqLen int32) int6
+ 		return 0
+ 	}
+ 	ptr := wasm2go.WasmAlloc(m.g, int32(len(resp)))
+-	copy(wasm2go.Memory(m.g)[ptr:], resp)
++	if ptr == 0 {
++		panic(fmt.Errorf("WASM callback allocation failed"))
++	}
++	callbackMemory, rangeErr := wasmMemorySlice(wasm2go.Memory(m.g), ptr, uint64(len(resp)))
++	if rangeErr != nil {
++		panic(rangeErr)
++	}
++	copy(callbackMemory, resp)
+ 	return int64(ptr)<<32 | int64(len(resp))
+ }
+ 
+@@ -85818,11 +85849,11 @@ func (h *AnnotationMap) GetAnnotation(id int32) (*SimpleValue, error) {
+ // <type
+ // > is composite, and the
+ //
+-//	corresponding component annotation maps and component types match.
+-//   - The StructAnnotationMap field is either NULL or is compatible by
+-//     recursively following these rules. When it is NULL, it indicates that the
+-//     annotation map is empty on all the nested levels, and therefore such maps
+-//     are compatible with any Type (including composite ones).
++//		corresponding component annotation maps and component types match.
++//	  - The StructAnnotationMap field is either NULL or is compatible by
++//	    recursively following these rules. When it is NULL, it indicates that the
++//	    annotation map is empty on all the nested levels, and therefore such maps
++//	    are compatible with any Type (including composite ones).
+ func (h *AnnotationMap) HasCompatibleStructure(type_ Googlesql_TypeNode) (bool, error) {
+ 	buf := pbAppendHandle(pbNewBuf(), 1, h.ptr)
+ 	buf = pbAppendHandlePtr(buf, 2, type_)
+@@ -120797,9 +120828,9 @@ func (h *FunctionArgumentTypeOptions) SetArrayElementMustSupportOrdering(v bool)
+ // <default
+ // _value> must be Equals to
+ //
+-//	the type of the argument.
+-//   - Non-expression-typed templated arguments (e.g., tables, connections,
+-//     models, etc.) cannot have default values.
++//		the type of the argument.
++//	  - Non-expression-typed templated arguments (e.g., tables, connections,
++//	    models, etc.) cannot have default values.
+ //
+ // Also note that the type of
+ // <default
+@@ -260959,6 +260990,7 @@ func (h *ResolvedMatchRecognizeScan) AnalyticFunctionGroupList2(i int32) (*Resol
+ //
+ // The single analytic group defines the partitioning and ordering
+ // for this MATCH_RECOGNIZE operation:
++//
+ //  1. Pattern matching occurs on individual partitions, just like
+ //     windowing functions. If it has no partitioning columns, the
+ //     whole input table is a single partition.
+diff --git a/wasm_memory.go b/wasm_memory.go
+new file mode 100644
+index 0000000..c0526de
+--- /dev/null
++++ b/wasm_memory.go
+@@ -0,0 +1,20 @@
++package googlesql
++
++import "fmt"
++
++// wasmMemoryBounds validates a wasm32 address without signed-pointer or
++// pointer-plus-length overflow. Allocation/free APIs retain int32 bit patterns.
++func wasmMemoryBounds(pointer int32, size, memorySize uint64) (uint64, uint64, error) {
++	start := uint64(uint32(pointer))
++	if start > memorySize || size > memorySize-start {
++		return 0, 0, fmt.Errorf("WASM memory range out of bounds: address=%d size=%d memory=%d", start, size, memorySize)
++	}
++	return start, start + size, nil
++}
++func wasmMemorySlice(memory []byte, pointer int32, size uint64) ([]byte, error) {
++	start, end, err := wasmMemoryBounds(pointer, size, uint64(len(memory)))
++	if err != nil {
++		return nil, err
++	}
++	return memory[start:end], nil
++}
+diff --git a/wasm_memory_large_test.go b/wasm_memory_large_test.go
+new file mode 100644
+index 0000000..ef40480
+--- /dev/null
++++ b/wasm_memory_large_test.go
+@@ -0,0 +1,79 @@
++package googlesql
++
++import (
++	"bytes"
++	wasm2go "github.com/goccy/googlesqlwasm2go"
++	"github.com/goccy/googlesqlwasm2go/base"
++	"os"
++	"testing"
++)
++
++// Opt in explicitly: this test grows real wasm memory beyond 2 GiB. It tests
++// transport addresses, not SQL schemas or application-specific fixture data.
++func TestInvokeAboveSignedWasmAddressBoundary(t *testing.T) {
++	if os.Getenv("GOOGLESQL_LARGE_MEMORY_TEST") != "1" {
++		t.Skip("set GOOGLESQL_LARGE_MEMORY_TEST=1 for the multi-GiB regression")
++	}
++	if err := Init(); err != nil {
++		t.Fatal(err)
++	}
++	m := module()
++	var held []int32
++	defer func() {
++		for _, ptr := range held {
++			wasm2go.WasmFree(m.g, ptr)
++		}
++	}()
++	for i := 0; i < 17; i++ {
++		ptr := wasm2go.WasmAlloc(m.g, 128<<20)
++		if ptr == 0 {
++			t.Fatal("could not reserve test address space")
++		}
++		held = append(held, ptr)
++	}
++	const size = 1 << 20
++	for i := 0; i < 128; i++ {
++		ptr := wasm2go.WasmAlloc(m.g, size)
++		if ptr == 0 {
++			t.Fatal("could not allocate request probe")
++		}
++		if ptr < 0 {
++			wasm2go.WasmFree(m.g, ptr)
++			break
++		}
++		held = append(held, ptr)
++		if i == 127 {
++			t.Fatal("test did not reach the high-address range")
++		}
++	}
++	request := bytes.Repeat([]byte{0x35}, size)
++	response := bytes.Repeat([]byte{0x71}, size)
++	actual, err := m.invoke(0, 0, request, func(g *base.Module, ptr, length int32) (int64, error) {
++		if ptr >= 0 {
++			t.Fatalf("request address did not exercise the signed boundary: %d", ptr)
++		}
++		memory, err := wasmMemorySlice(wasm2go.Memory(g), ptr, uint64(uint32(length)))
++		if err != nil {
++			return 0, err
++		}
++		if !bytes.Equal(memory, request) {
++			t.Fatal("request bytes changed")
++		}
++		out := wasm2go.WasmAlloc(g, size)
++		if out >= 0 {
++			t.Fatalf("response address did not exercise the signed boundary: %d", out)
++		}
++		target, err := wasmMemorySlice(wasm2go.Memory(g), out, size)
++		if err != nil {
++			return 0, err
++		}
++		copy(target, response)
++		return int64(out)<<32 | size, nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if !bytes.Equal(actual, response) {
++		t.Fatal("response bytes changed")
++	}
++}
+diff --git a/wasm_memory_test.go b/wasm_memory_test.go
+new file mode 100644
+index 0000000..c0a1e74
+--- /dev/null
++++ b/wasm_memory_test.go
+@@ -0,0 +1,23 @@
++package googlesql
++
++import "testing"
++
++func TestWasmMemoryBounds(t *testing.T) {
++	for _, tc := range []struct {
++		pointer                 int32
++		size, limit, start, end uint64
++		invalid                 bool
++	}{
++		{16, 4, 64, 16, 20, false}, {-2147415408, 100, 1 << 32, 2147551888, 2147551988, false},
++		{-1, 1, 1 << 32, (1 << 32) - 1, 1 << 32, false}, {-1, 2, 1 << 32, 0, 0, true},
++		{64, 1, 64, 0, 0, true}, {16, ^uint64(0), 64, 0, 0, true}, {0, 0, 0, 0, 0, false},
++	} {
++		a, b, err := wasmMemoryBounds(tc.pointer, tc.size, tc.limit)
++		if (err != nil) != tc.invalid {
++			t.Fatalf("pointer=%d size=%d: unexpected error %v", tc.pointer, tc.size, err)
++		}
++		if err == nil && (a != tc.start || b != tc.end) {
++			t.Fatalf("range=%d:%d expected=%d:%d", a, b, tc.start, tc.end)
++		}
++	}
++}

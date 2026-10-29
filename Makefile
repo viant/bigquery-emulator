@@ -4,7 +4,8 @@ REVISION := $(shell git rev-parse --short HEAD)
 # The SQL backend is pure Go, so the emulator builds without cgo and links a
 # fully static binary on every platform.
 emulator/build:
-	CGO_ENABLED=0 go build -o bigquery-emulator \
+	sh scripts/prepare-googlesql.sh
+	CGO_ENABLED=0 GOFLAGS=-modfile=$(CURDIR)/.patched-googlesql/emulator.mod go build -o bigquery-emulator \
 		-ldflags='-s -w -X main.version=${VERSION} -X main.revision=${REVISION}' \
 		./cmd/bigquery-emulator
 

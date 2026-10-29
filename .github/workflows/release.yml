@@ -21,8 +21,13 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: stable
+          go-version: '1.26.1'
           cache: true
+
+      - name: Prepare corrected SQL dependency
+        run: |
+          sh scripts/prepare-googlesql.sh
+          echo "GOFLAGS=-modfile=$PWD/.patched-googlesql/emulator.mod" >> "$GITHUB_ENV"
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7

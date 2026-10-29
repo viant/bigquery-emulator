@@ -26,9 +26,23 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      - name: Prepare corrected SQL dependency
+        run: |
+          sh scripts/prepare-googlesql.sh
+          echo "GOFLAGS=-modfile=$PWD/.patched-googlesql/emulator.mod" >> "$GITHUB_ENV"
+
       - name: Verify request and job API regressions
         run: go test -p=1 ./internal/metadata ./server
         env:
+          GOMAXPROCS: '2'
+
+      - name: Verify unsigned WASM buffer boundaries
+        working-directory: .patched-googlesql/source
+        run: go test -count=1 -run 'TestWasmMemory|TestInvokeAboveSignedWasmAddressBoundary' .
+        env:
+          GOFLAGS: ''
+          GOOGLESQL_LARGE_MEMORY_TEST: '1'
+          GOMEMLIMIT: 4GiB
           GOMAXPROCS: '2'
 
       - uses: docker/metadata-action@v5

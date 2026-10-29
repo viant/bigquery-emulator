@@ -20,3 +20,6 @@ dist
 
 # Local output of the e2e conformance suite
 /test/e2e/.out/
+
+# Private, reproducible copy of the patched SQL module and alternate modfile.
+/.patched-googlesql/

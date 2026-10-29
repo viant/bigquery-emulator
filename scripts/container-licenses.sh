@@ -28,6 +28,8 @@ cp LICENSE "$out/LICENSE"
 mkdir -p "$out/go"
 cp "$(go env GOROOT)/LICENSE" "$out/go/LICENSE"
 go list -m -f '{{.Path}} {{.Version}}{{with .Replace}} => {{.Path}} {{.Version}}{{end}}' all > "$out/dependency-versions.txt"
+cp scripts/go-googlesql-wasm32.patch "$out/go-googlesql-wasm32.patch"
+cp scripts/GOOGLESQL-PATCH.md "$out/GOOGLESQL-PATCH.md"
 cat > "$out/README.txt" <<'TEXT'
 LICENSE is the emulator's original upstream MIT license and copyright notice.
 go/LICENSE is the Go toolchain/standard-library license.
