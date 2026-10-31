@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"runtime"
 	"strings"
-	"sync"
 
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
@@ -27,17 +26,6 @@ func methodOverrideMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func sequentialAccessMiddleware() func(http.Handler) http.Handler {
-	var mu sync.Mutex
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			mu.Lock()
-			defer mu.Unlock()
-			next.ServeHTTP(w, r)
-		})
-	}
 }
 
 func recoveryMiddleware(s *Server) func(http.Handler) http.Handler {
