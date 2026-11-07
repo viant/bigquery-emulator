@@ -27,8 +27,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ruby ruby-dev build-essential ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY clients/ruby/gems.txt /tmp/gems.txt
-RUN gem install --no-document --install-dir /deps/ruby \
-        $(awk -F: '{print $1, "-v", $2}' /tmp/gems.txt)
+# Bookworm's Ruby 3.1 resolves multi_json 1.19, whose JSON adapter passes
+# parser options positionally. Install the compatible JSON 2 pin before
+# the BigQuery SDK so RubyGems reuses it for the transitive dependency.
+RUN GEM_HOME=/deps/ruby GEM_PATH=/deps/ruby xargs gem install --no-document --conservative \
+        < /tmp/gems.txt
 
 # ---------------------------------------------------------------------------
 # PHP client dependencies
