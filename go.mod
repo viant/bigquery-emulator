@@ -157,4 +157,4 @@ require (
 	modernc.org/quickjs v0.18.2 // indirect
 )
 
-replace github.com/goccy/googlesqlite => github.com/viant/googlesqlite v0.0.0-20261028202645-6f0c8513e7b0
+replace github.com/goccy/googlesqlite => github.com/viant/googlesqlite v0.0.0-20261107144500-62e905580439
